@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>fresnel · network analyser</title>
+<meta name="description" content="Deep, sustained Wi-Fi and network analysis in the browser: latency, jitter, loss, dropouts, bufferbloat, throughput, DNS.">
+<meta name="theme-color" content="#07090f">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cg fill='none' stroke-width='4'%3E%3Ccircle cx='32' cy='32' r='6' stroke='%237cf4ff'/%3E%3Ccircle cx='32' cy='32' r='15' stroke='%2388a8ff' opacity='.8'/%3E%3Ccircle cx='32' cy='32' r='25' stroke='%23b48cff' opacity='.55'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css?v=3">
+</head>
+<body>
+<div class="bg"><div class="rings"></div></div>
+
+<header class="top">
+  <div class="brand">
+    <svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="none" stroke-width="3.5"><circle cx="32" cy="32" r="6" stroke="#7cf4ff"/><circle cx="32" cy="32" r="15" stroke="#88a8ff" opacity=".85"/><circle cx="32" cy="32" r="25" stroke="#b48cff" opacity=".55"/></g></svg>
+    <div>
+      <h1>fresnel</h1>
+      <p class="sub">network analyser</p>
+    </div>
+  </div>
+  <div class="controls">
+    <label class="seg-label">stability window</label>
+    <div class="seg" id="durSeg" role="radiogroup">
+      <button data-d="30">30s</button>
+      <button data-d="60" class="on">60s</button>
+      <button data-d="120">2m</button>
+      <button data-d="300">5m</button>
+      <button data-d="0" title="Keep probing until you press stop">∞</button>
+    </div>
+    <label class="chk"><input type="checkbox" id="optSpeed" checked><span>speed + bufferbloat</span></label>
+    <button id="startBtn" class="start"><span class="dot"></span><span class="lbl">Run test</span></button>
+  </div>
+</header>
+
+<main>
+  <!-- LIVE -->
+  <section class="panel live" id="live">
+    <div class="live-head">
+      <div class="phase">
+        <span class="phase-dot" id="phaseDot"></span>
+        <span id="phaseName">ready</span>
+        <span class="phase-sub" id="phaseSub">pick a window and hit run. keep this tab open and in front.</span>
+      </div>
+      <div class="clock mono" id="clock">00:00</div>
+    </div>
+    <div class="progress"><div class="bar" id="progBar"></div><div class="marks" id="progMarks"></div></div>
+
+    <div class="readouts">
+      <div class="ro"><span class="k">ping now</span><span class="v mono" id="roPing">–</span><span class="u">ms</span></div>
+      <div class="ro"><span class="k">median</span><span class="v mono" id="roMed">–</span><span class="u">ms</span></div>
+      <div class="ro"><span class="k">jitter</span><span class="v mono" id="roJit">–</span><span class="u">ms</span></div>
+      <div class="ro"><span class="k">loss</span><span class="v mono" id="roLoss">–</span><span class="u">%</span></div>
+      <div class="ro"><span class="k">spikes</span><span class="v mono" id="roSpk">–</span><span class="u"></span></div>
+      <div class="ro"><span class="k">throughput</span><span class="v mono" id="roTp">–</span><span class="u">Mbps</span></div>
+    </div>
+
+    <div class="chart-wrap">
+      <div class="chart-legend">
+        <span><i class="sw cf"></i>cloudflare edge rtt</span>
+        <span><i class="sw gg"></i>google rtt</span>
+        <span><i class="sw loss"></i>lost probe</span>
+        <span><i class="sw spike"></i>spike</span>
+        <span class="lg-right mono" id="chartScale"></span>
+      </div>
+      <canvas id="latChart" class="chart tall"></canvas>
+      <canvas id="tpChart" class="chart short"></canvas>
+    </div>
+    <div class="eventlog mono" id="eventLog"></div>
+  </section>
+
+  <!-- REPORT -->
+  <section id="report" class="report hidden">
+    <div class="panel verdict">
+      <div class="grade-ring" id="gradeRing">
+        <svg viewBox="0 0 120 120"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7cf4ff"/><stop offset=".55" stop-color="#88a8ff"/><stop offset="1" stop-color="#b48cff"/></linearGradient></defs><circle cx="60" cy="60" r="52" class="track"/><circle cx="60" cy="60" r="52" class="arc" id="gradeArc"/></svg>
+        <div class="grade-txt"><span id="gradeLetter">–</span><small id="gradeScore"></small></div>
+      </div>
+      <div class="verdict-body">
+        <div class="eyebrow">stability verdict</div>
+        <h2 id="verdictTitle">–</h2>
+        <ul id="verdictList" class="verdict-list"></ul>
+      </div>
+      <div class="verdict-actions">
+        <button class="ghost" id="copyBtn">Copy full report</button>
+        <button class="ghost" id="txtBtn">Download .txt</button>
+        <button class="ghost" id="jsonBtn">Export raw JSON</button>
+      </div>
+    </div>
+
+    <div class="usecases" id="useCases"></div>
+
+    <div class="grid">
+      <div class="panel card" id="cLatency"></div>
+      <div class="panel card" id="cJitter"></div>
+      <div class="panel card" id="cLoss"></div>
+      <div class="panel card" id="cBloat"></div>
+      <div class="panel card" id="cDown"></div>
+      <div class="panel card" id="cUp"></div>
+      <div class="panel card" id="cDns"></div>
+      <div class="panel card" id="cCold"></div>
+      <div class="panel card wide" id="cNet" data-wide></div>
+      <div class="panel card wide" id="cDevice"></div>
+    </div>
+
+    <div class="grid two">
+      <div class="panel card">
+        <h3>latency distribution <span class="hint">idle probes · dashed line = median</span></h3>
+        <canvas id="histChart" class="chart mid"></canvas>
+      </div>
+      <div class="panel card">
+        <h3>stability heatmap <span class="hint">each cell = 1 s · colour = worst probe</span></h3>
+        <div id="heat" class="heat"></div>
+        <div class="heat-legend mono"><span>&lt;30</span><i style="--c:var(--good)"></i><i style="--c:#9be15d"></i><i style="--c:var(--warn)"></i><i style="--c:#ff8a3d"></i><i style="--c:var(--bad)"></i><span>lost</span></div>
+      </div>
+    </div>
+
+    <div class="grid two">
+      <div class="panel card">
+        <h3>worst windows <span class="hint">rolling 5 s, ranked</span></h3>
+        <table class="tbl mono" id="worstTbl"></table>
+      </div>
+      <div class="panel card">
+        <h3>event timeline <span class="hint">spikes, lost probes, outages, link changes</span></h3>
+        <div class="timeline mono" id="timeline"></div>
+      </div>
+    </div>
+
+    <div class="panel card">
+      <h3>run history <span class="hint">stored on this device only · compare over the day</span></h3>
+      <table class="tbl mono" id="histTbl"></table>
+    </div>
+
+    <p class="footnote">
+      Browsers can't read Wi-Fi internals (RSSI, channel, band, noise). fresnel measures what the connection actually does:
+      HTTP round trips to Cloudflare's nearest edge (resource-timing precise, server time subtracted) and to Google, probe loss (no reply within 2 s),
+      multi-stream throughput, latency under load (bufferbloat), DNS-over-HTTPS resolver timing and the cold connection breakdown.
+      Loss here is application-level: a lost probe means the link stalled long enough that a request got no answer in 2 s, which is exactly what "iffy" feels like.
+    </p>
+  </section>
+</main>
+
+<footer class="foot mono">fresnel · runs entirely in your browser · endpoints: speed.cloudflare.com, google.com, ipwho.is, ipify, DoH (1.1.1.1 / 8.8.8.8)</footer>
+<div class="toast" id="toast"></div>
+<script src="app.js?v=3"></script>
+</body>
+</html>
