@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=3">
+<link rel="stylesheet" href="styles.css?v=4">
 </head>
 <body>
 <div class="bg"><div class="rings"></div></div>
@@ -75,7 +75,10 @@
 
   <!-- REPORT -->
   <section id="report" class="report hidden">
-    <div class="panel verdict">
+    <nav class="jump" id="jump" aria-label="report sections">
+      <a href="#verdictCard">verdict</a><a href="#cLatency">latency</a><a href="#cLoss">loss</a><a href="#cBloat">bloat</a><a href="#cDown">speed</a><a href="#cDns">dns</a><a href="#cNet">network</a><a href="#chartsRow">charts</a><a href="#worstRow">events</a><a href="#historyCard">history</a>
+    </nav>
+    <div class="panel verdict" id="verdictCard">
       <div class="grade-ring" id="gradeRing">
         <svg viewBox="0 0 120 120"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7cf4ff"/><stop offset=".55" stop-color="#88a8ff"/><stop offset="1" stop-color="#b48cff"/></linearGradient></defs><circle cx="60" cy="60" r="52" class="track"/><circle cx="60" cy="60" r="52" class="arc" id="gradeArc"/></svg>
         <div class="grade-txt"><span id="gradeLetter">–</span><small id="gradeScore"></small></div>
@@ -107,7 +110,7 @@
       <div class="panel card wide" id="cDevice"></div>
     </div>
 
-    <div class="grid two">
+    <div class="grid two" id="chartsRow">
       <div class="panel card">
         <h3>latency distribution <span class="hint">idle probes · dashed line = median</span></h3>
         <canvas id="histChart" class="chart mid"></canvas>
@@ -119,10 +122,10 @@
       </div>
     </div>
 
-    <div class="grid two">
+    <div class="grid two" id="worstRow">
       <div class="panel card">
         <h3>worst windows <span class="hint">rolling 5 s, ranked</span></h3>
-        <table class="tbl mono" id="worstTbl"></table>
+        <div class="tblwrap"><table class="tbl mono" id="worstTbl"></table></div>
       </div>
       <div class="panel card">
         <h3>event timeline <span class="hint">spikes, lost probes, outages, link changes</span></h3>
@@ -130,9 +133,9 @@
       </div>
     </div>
 
-    <div class="panel card">
-      <h3>run history <span class="hint">stored on this device only · compare over the day</span></h3>
-      <table class="tbl mono" id="histTbl"></table>
+    <div class="panel card" id="historyCard">
+      <h3>run history <span class="hint" id="histHint">stored on this device only · compare over the day</span></h3>
+      <div class="tblwrap hscroll"><table class="tbl mono hist" id="histTbl"></table></div>
     </div>
 
     <p class="footnote">
@@ -146,6 +149,6 @@
 
 <footer class="foot mono">fresnel · runs entirely in your browser · endpoints: speed.cloudflare.com, google.com, ipwho.is, ipify, DoH (1.1.1.1 / 8.8.8.8)</footer>
 <div class="toast" id="toast"></div>
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>
