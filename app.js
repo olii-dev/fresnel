@@ -334,7 +334,7 @@ function finish() {
   ui.phaseDot.classList.remove('on'); ui.bar.style.width = '100%';
   ui.start.classList.remove('running'); ui.start.querySelector('.lbl').textContent = 'Run again';
   document.querySelectorAll('#durSeg button, #optSpeed').forEach(b => b.disabled = false);
-  S.analysis = analyse(); liveReadouts(); render(S.analysis); saveHistory(S.analysis); drawAll();
+  S.analysis = analyse(); saveHistory(S.analysis); liveReadouts(); render(S.analysis); drawAll();
   $('#report').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -540,16 +540,33 @@ function render(A) {
 }
 
 /* ---------- history ---------- */
+let memHistory = null, storageOk = null;
+function storageWorks() {
+  if (storageOk != null) return storageOk;
+  try { const k = 'fresnel.__t'; localStorage.setItem(k, '1'); const ok = localStorage.getItem(k) === '1'; localStorage.removeItem(k); storageOk = ok; }
+  catch (e) { storageOk = false; }
+  return storageOk;
+}
 function saveHistory(A) {
   const h = loadHistory();
   h.unshift({ ts: Date.now(), grade: A.grade, score: Math.round(A.score), med: A.idle.median, jit: A.idle.jitter, loss: A.loss.idlePct, stalls: A.outages.length, down: A.dl?.avg, up: A.ul?.avg, bloat: A.bloat, isp: S.info.geo?.connection?.isp || S.info.geo2?.org || '', dur: Math.round(A.idleDur) });
-  try { localStorage.setItem('fresnel.runs', JSON.stringify(h.slice(0, 30))); } catch (e) {}
+  memHistory = h.slice(0, 30);
+  let saved = false;
+  if (storageWorks()) { try { localStorage.setItem('fresnel.runs', JSON.stringify(memHistory)); saved = JSON.parse(localStorage.getItem('fresnel.runs') || '[]')[0]?.ts === memHistory[0].ts; } catch (e) { saved = false; } }
+  S.historySaved = saved;
+  if (!saved) toast('Run history couldn\u2019t be saved on this browser (private mode or storage blocked). Kept for this tab only.', 4200);
 }
-function loadHistory() { try { return JSON.parse(localStorage.getItem('fresnel.runs') || '[]'); } catch (e) { return []; } }
+function loadHistory() {
+  if (memHistory) return memHistory;
+  try { memHistory = JSON.parse(localStorage.getItem('fresnel.runs') || '[]'); if (!Array.isArray(memHistory)) memHistory = []; } catch (e) { memHistory = []; }
+  return memHistory;
+}
 function renderHistory() {
   const h = loadHistory();
+  const hint = $('#histHint');
+  if (hint) { const bad = !storageWorks() || (S && S.historySaved === false); hint.textContent = bad ? 'this browser is blocking storage (private mode?) · runs kept for this tab only' : 'stored on this device only · compare over the day'; hint.classList.toggle('warn', bad); }
   $('#histTbl').innerHTML = '<tr><th>when</th><th>grade</th><th>ping</th><th>jitter</th><th>loss</th><th>stalls</th><th>down</th><th>up</th><th>bloat</th><th>window</th></tr>' +
-    h.map(r => `<tr><td>${new Date(r.ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td><td style="color:${col(r.score)}">${r.grade}</td><td>${f0(r.med)}</td><td>${f(r.jit)}</td><td class="${r.loss > 0.5 ? 'bad' : ''}">${f(r.loss, 2)}%</td><td class="${r.stalls ? 'bad' : ''}">${r.stalls}</td><td>${f(r.down, 0)}</td><td>${f(r.up, 0)}</td><td>${Number.isFinite(r.bloat) && r.bloat != null ? '+' + f0(r.bloat) : '–'}</td><td>${r.dur}s</td></tr>`).join('');
+    h.map(r => `<tr><td>${new Date(r.ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td><td style="color:${col(r.score)}">${r.grade}</td><td>${f0(r.med)}</td><td>${f(r.jit)}</td><td class="${r.loss > 0.5 ? 'bad' : ''}">${f(r.loss, 2)}%</td><td class="${r.stalls ? 'bad' : ''}">${r.stalls}</td><td>${f(r.down, 0)}</td><td>${f(r.up, 0)}</td><td>${Number.isFinite(r.bloat) && r.bloat != null ? '+' + f0(r.bloat) : '–'}</td><td>${r.dur}s</td></tr>`).join('') + (h.length ? '' : '<tr><td colspan="10" class="empty">no runs yet</td></tr>');
 }
 
 /* ---------- charts ---------- */
@@ -565,7 +582,10 @@ function phaseBands(c, x, h, tEnd) {
   keys.forEach((k, i) => {
     const a = S.phaseStart[k], b = i + 1 < keys.length ? S.phaseStart[keys[i + 1]] : tEnd;
     c.fillStyle = PH_COL[k]; c.fillRect(x(a), 0, x(b) - x(a), h);
-    c.fillStyle = 'rgba(160,175,210,.45)'; c.font = '500 10px Inter, sans-serif'; c.fillText(({ idle: 'STABILITY', down: 'DOWNLOAD', up: 'UPLOAD', dns: 'DNS' })[k], x(a) + 6, 13);
+    c.fillStyle = 'rgba(160,175,210,.45)'; c.font = '500 10px Inter, sans-serif';
+    const bw = x(b) - x(a), long = ({ idle: 'STABILITY', down: 'DOWNLOAD', up: 'UPLOAD', dns: 'DNS' })[k], short = ({ idle: 'IDLE', down: 'DL', up: 'UL', dns: '' })[k];
+    const lbl = c.measureText(long).width + 10 <= bw ? long : c.measureText(short).width + 8 <= bw ? short : '';
+    if (lbl) c.fillText(lbl, x(a) + 5, 13);
   });
 }
 function drawLat() {
@@ -583,8 +603,11 @@ function drawLat() {
   // grid
   c.strokeStyle = 'rgba(160,180,255,.07)'; c.fillStyle = 'rgba(138,147,171,.8)'; c.font = '10px "JetBrains Mono", monospace'; c.lineWidth = 1;
   for (let i = 0; i <= 4; i++) { const v = ymax * i / 4, yy = Math.round(y(v)) + .5; c.beginPath(); c.moveTo(padL, yy); c.lineTo(W - padR, yy); c.stroke(); c.fillText(String(Math.round(v)), 4, yy + 3); }
-  const span = tEnd - t0; const step = span > 600 ? 120 : span > 240 ? 60 : span > 90 ? 20 : 10;
-  for (let t = 0; t <= span; t += step) { const xx = x(t0 + t); c.fillText(fmtClock(t), xx - 14, H - 4); }
+  const span = tEnd - t0; const lblW = c.measureText('00:00').width + 12;
+  const step = [5, 10, 15, 20, 30, 60, 120, 300, 600, 1200, 3600].find(st => st / span * w >= lblW) || 3600;
+  c.textAlign = 'center';
+  for (let t = 0; t <= span; t += step) { const xx = Math.min(Math.max(x(t0 + t), padL + lblW / 2 - 6), W - padR - lblW / 2 + 6); c.fillText(fmtClock(t), xx, H - 4); }
+  c.textAlign = 'left';
   // median
   if (S.idleMed) { c.setLineDash([4, 4]); c.strokeStyle = 'rgba(124,244,255,.35)'; c.beginPath(); c.moveTo(padL, y(S.idleMed)); c.lineTo(W - padR, y(S.idleMed)); c.stroke(); c.setLineDash([]); }
   // loss
@@ -721,8 +744,18 @@ function jsonReport() {
   const { analysis, ...raw } = S; const A = { ...analysis }; if (A.dl) A.dl = { ...A.dl, samples: undefined }; if (A.ul) A.ul = { ...A.ul, samples: undefined };
   return JSON.stringify({ tool: 'fresnel', version: 1, at: new Date(S.wall0).toISOString(), summary: A, raw: { ...raw, stopRequested: undefined, running: undefined } }, (k, v) => typeof v === 'number' ? Math.round(v * 100) / 100 : v, 1);
 }
-function download(name, text, type) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
-function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('on'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('on'), 1800); }
+const touchUI = matchMedia('(pointer: coarse)').matches;
+async function download(name, text, type) {
+  // phones: the share sheet has "Save to Files" and works reliably in iOS Safari
+  if (touchUI && navigator.canShare && typeof File === 'function') {
+    try { const file = new File([text], name, { type }); if (navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: name }); return; } }
+    catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.rel = 'noopener';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000); // Safari asks before downloading; revoking early kills the file
+}
+function toast(m, ms = 1800) { const t = $('#toast'); t.textContent = m; t.classList.add('on'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('on'), ms); }
 const stamp = () => new Date(S.wall0).toISOString().slice(0, 16).replace(/[:T]/g, '-');
 $('#copyBtn').onclick = async () => { const txt = textReport(); try { await navigator.clipboard.writeText(txt); toast('Full report copied'); } catch (e) { download(`fresnel-${stamp()}.txt`, txt, 'text/plain'); toast('Clipboard blocked, downloaded instead'); } };
 $('#txtBtn').onclick = () => download(`fresnel-${stamp()}.txt`, textReport(), 'text/plain');
